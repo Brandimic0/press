@@ -131,25 +131,28 @@ class AppRelease(Document):
 		self.output += self.run(f"git checkout {self.hash}")
 		self.output += self.run(f"git reset --hard {self.hash}")
 
-		app = frappe.get_doc("App", source.app)
+		try:
+			app = frappe.get_doc("App", source.app)
 
-		if app.get("custom_contains_submodules"):
-			token = get_access_token(source.github_installation_id)
-			authenticated_url = url.replace('https://', f'https://x-access-token:{token}@')
+			if app.get("custom_contains_submodules"):
+				token = get_access_token(source.github_installation_id)
+				authenticated_url = url.replace('https://', f'https://x-access-token:{token}@')
 
-			# Update submodule URLs with the token
-			submodule_urls = self.run("git config --file .gitmodules --get-regexp url").strip().split('\n')
-			for line in submodule_urls:
-				submodule_path, submodule_url = line.split()
-				submodule_url_with_token = submodule_url.replace('https://', f'https://x-access-token:{token}@')
-				self.run(f"git config --file .gitmodules {submodule_path} {submodule_url_with_token}")
+				# Update submodule URLs with the token
+				submodule_urls = self.run("git config --file .gitmodules --get-regexp url").strip().split('\n')
+				for line in submodule_urls:
+					submodule_path, submodule_url = line.split()
+					submodule_url_with_token = submodule_url.replace('https://', f'https://x-access-token:{token}@')
+					self.run(f"git config --file .gitmodules {submodule_path} {submodule_url_with_token}")
 
-			self.output += self.run("git submodule sync")
+				self.output += self.run("git submodule sync")
 
-			# Initialize and update submodules to the commit recorded in the parent branch
-			self.output += self.run("git submodule update --init --recursive --jobs 4")
+				# Initialize and update submodules to the commit recorded in the parent branch
+				self.output += self.run("git submodule update --init --recursive --jobs 4")
 
-			self.run("git config --unset credential.helper")
+				self.run("git config --unset credential.helper")
+		except Exception:
+			pass
 	
 
 	def _get_repo_url(self, source: "AppSource") -> str:
