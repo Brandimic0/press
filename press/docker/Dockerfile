@@ -221,23 +221,14 @@ COPY --chown=frappe:frappe common_site_config.json /home/frappe/frappe-bench/sit
 #Add support for monorepo
 # COPY --chown=frappe:frappe apps/{{ app.app }} /home/frappe/frappe-bench/apps/{{ app.app }}
 
-# # Setup requirements and build the app
-# RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 \
-#   bash -c "cd /home/frappe/frappe-bench \
-#   && bench setup requirements {{ app.app }} \
-#   && cd apps/{{ app.app }} \
-#   && git submodule update --init --recursive \
-#   && cd /home/frappe/frappe-bench \
-#   && bench build --production" \
-#   `#stage-apps-{{ app.app }}`
-
-RUN --mount=type=cache,sharing=locked,target=/home/frappe/.cache,uid=1000,gid=1000 \
-  --mount=type=bind,source=apps/{{ app.app }},target=/home/frappe/context/apps/{{ app.app }} \
-  bench get-app file:///home/frappe/context/apps/{{ app.app }} \
-    {% if app.use_cached %}
-    # Bench get-app flags to use get-app cache
-    --cache-key {{ app.hash }} {% if doc.compress_app_cache %}--compress-artifacts{% endif %} \
-    {% endif %}
+# Setup requirements and build the app
+RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 \
+  bash -c "cd /home/frappe/frappe-bench \
+  && bench setup requirements {{ app.app }} \
+  && cd apps/{{ app.app }} \
+  && git submodule update --init --recursive \
+  && cd /home/frappe/frappe-bench \
+  && bench build --production" \
   `#stage-apps-{{ app.app }}`
 
   
