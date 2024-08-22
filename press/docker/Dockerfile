@@ -203,10 +203,7 @@ ENV {{v.key}} {{ v.value }}
 {% endfor %}
 
 # Install Frappe app
-RUN git config --global --add safe.directory /home/frappe/context/apps/frappe/.git
-
-RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 --mount=type=bind,source=apps/frappe,target=/home/frappe/context/apps/frappe bench init --python /usr/bin/python${PYTHON_VERSION} --no-backups --frappe-path file:///home/frappe/context/apps/frappe frappe-bench `#stage-apps-frappe`
-
+RUN --mount=type=cache,sharing=locked,target=/home/frappe/.cache,uid=1000,gid=1000 --mount=type=bind,source=apps/frappe,target=/home/frappe/context/apps/frappe bench init --python /usr/bin/python${PYTHON_VERSION} --no-backups --frappe-path file:///home/frappe/context/apps/frappe frappe-bench `#stage-apps-frappe`
 WORKDIR /home/frappe/frappe-bench
 
 RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 /home/frappe/frappe-bench/env/bin/pip install pycups==2.0.1
@@ -216,25 +213,34 @@ COPY --chown=frappe:frappe redis /home/frappe/frappe-bench/redis
 COPY --chown=frappe:frappe .vimrc /home/frappe/.vimrc
 COPY --chown=frappe:frappe common_site_config.json /home/frappe/frappe-bench/sites/common_site_config.json
 
+# Install other apps
 {% for app in doc.apps %}
 {% if app.app != "frappe" %}
-#Add support for monorepo
-COPY --chown=frappe:frappe apps/{{ app.app }} /home/frappe/frappe-bench/apps/{{ app.app }}
 
-# # Setup requirements and build the app
-RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 \
-  bash -c "cd /home/frappe/frappe-bench/apps/{{ app.app }} \
-  && git submodule update --init --recursive" \
+RUN --mount=type=cache,sharing=locked,target=/home/frappe/.cache,uid=1000,gid=1000 \
+  --mount=type=bind,source=apps/{{ app.app }},target=/home/frappe/context/apps/{{ app.app }} \
+  bench get-app file:///home/frappe/context/apps/{{ app.app }} \
+    {% if app.use_cached %}
+    # Bench get-app flags to use get-app cache
+    --cache-key {{ app.hash }} {% if doc.compress_app_cache %}--compress-artifacts{% endif %} \
+    {% endif %}
   `#stage-apps-{{ app.app }}`
-  
+
+  {% if app.app == "fodista" %}
+    RUN --mount=type=cache,target=/home/frappe/.cache,uid=1000,gid=1000 \
+    bash -c "cd /home/frappe/frappe-bench/apps/{{ app.app }} \
+    && git submodule update --init --recursive \
+    && cd dashboard && yarn install \
+    && NODE_ENV=production yarn run build" \
+    `#stage-apps-fodista-frontend`
+  {% endif %}
+
 {% endif %}
 {% endfor %}
-
 
 # Pull app updates from mounted repository
 {% for app in doc.apps %}
 {% if app.pullable_release %}
-
 RUN --mount=type=bind,source=app_updates/{{ app.app }},target=/home/frappe/context/app_updates/{{ app.app }} \
   cd /home/frappe/frappe-bench/apps/{{ app.app }} \
   && git reset --hard \
@@ -246,12 +252,7 @@ RUN --mount=type=bind,source=app_updates/{{ app.app }},target=/home/frappe/conte
 {% endif %}
 {% endfor %}
 
-WORKDIR /home/frappe/frappe-bench 
-
-RUN bench setup requirements `#stage-Setup-Requirements`
-
-RUN bench build `#stage-Build-Assets`
-
+RUN cd /home/frappe/frappe-bench && bench build --production --hard-link
 
 COPY --chown=frappe:frappe config /home/frappe/frappe-bench/config
 COPY --chown=frappe:frappe apps.txt /home/frappe/frappe-bench/sites/apps.txt
@@ -262,8 +263,6 @@ RUN mkdir -p {{ m.destination }} && \
   chown -R frappe:frappe {{ m.destination }} \
   `#stage-mounts-create`
 {% endfor %}
-
-
 
 ENV FRAPPE_HARD_LINK_ASSETS True
 
